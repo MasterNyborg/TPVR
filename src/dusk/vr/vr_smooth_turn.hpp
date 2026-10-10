@@ -83,6 +83,20 @@ inline constexpr float kSnapTurnEngageThreshold = 0.6f;
 inline constexpr float kSnapTurnReleaseThreshold = 0.3f;
 inline bool g_snapTurnArmed = true;
 
+// Set true on any INSTANT yaw discontinuity applied to g_smoothTurnYawRad in
+// one step -- a snap turn (updateSnapTurn below), or a scripted-camera jump
+// cut (snapScriptedCameraYaw further down). In both cases the 3D view rotates
+// by the entire jump in a single frame, so the HUD/menu billboard -- which
+// normally low-pass filters head orientation for steadiness (see
+// updateHudSmoothing() in vr_stereo_render.hpp) -- must snap to the new
+// direction too, instead of damping across the jump and visibly swinging
+// behind the world. Consumed (cleared) once per frame by updateHudSmoothing().
+// Manual head turns never set this, so ordinary damping still applies to them.
+// Deliberately a shared global rather than a return value: updateSnapTurn()
+// runs earlier in the same frame (vr_main.cpp's tick()) than the single
+// updateHudSmoothing() call, and several call sites can set it in one frame.
+inline bool g_instantYawJumpThisFrame = false;
+
 inline void updateSnapTurn(float rightStickX, float snapDeg) {
     const float mag = std::abs(rightStickX);
     if (g_snapTurnArmed) {
@@ -90,6 +104,9 @@ inline void updateSnapTurn(float rightStickX, float snapDeg) {
             g_snapTurnArmed = false;
             constexpr float kDegToRad = 3.14159265358979323846f / 180.f;
             g_smoothTurnYawRad -= snapDeg * kDegToRad * (rightStickX > 0.f ? 1.f : -1.f);
+            // The view just jumped a whole snap angle in one frame -- tell the
+            // HUD to snap with it rather than damp across the discontinuity.
+            g_instantYawJumpThisFrame = true;
         }
     } else if (mag <= kSnapTurnReleaseThreshold) {
         g_snapTurnArmed = true;
@@ -171,6 +188,9 @@ inline void updateSnapTurn(float rightStickX, float snapDeg) {
 inline constexpr float kScriptedCameraJumpCutThresholdDeg = 25.f;  // untested guess -- raise if smooth Z-target orbiting is ever misdetected as a cut (unwanted snaps mid-orbit), lower if an actual shot change doesn't register
 inline void snapScriptedCameraYaw(float gapRad) {
     g_smoothTurnYawRad += gapRad;
+    // Same one-step discontinuity as a snap turn -- the HUD must follow the
+    // jump instantly here too (see g_instantYawJumpThisFrame's comment).
+    g_instantYawJumpThisFrame = true;
 }
 
 // Z-target swing-in tracking tunables (vr_main.cpp's dedicated Z-target

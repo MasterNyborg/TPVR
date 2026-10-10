@@ -5633,7 +5633,15 @@ void daAlink_c::setBodyPartPos() {
         // which is real physics/collision state (read by dBomb_c's own
         // logic), not just a draw matrix -- deliberately not attempted
         // here; not yet explored.
-        if (dusk::vr::isRenderingToHeadset()) {
+        // First person only: in third person the hand models are NOT tracked
+        // to the controllers (refreshTrackedHandDrawMtxLive() is gated on
+        // isFirstPerson()), so Link's visible arms are his normal animated
+        // ones -- overriding the hand positions here would place a carried/
+        // grabbed item out at the real controllers (i.e. around the camera)
+        // instead of in his arms. Keeping the animated hand positions in third
+        // person puts the item back where his arms actually are, and it stays
+        // there even if the third-person camera moves.
+        if (dusk::vr::isRenderingToHeadset() && dusk::vr::isVrFirstPerson(this)) {
             float lx, ly, lz, rx, ry, rz;
             if (dusk::vr::getTrackedHandWorldPos(true, lx, ly, lz) &&
                 dusk::vr::getTrackedHandWorldPos(false, rx, ry, rz)) {
@@ -20283,10 +20291,17 @@ int daAlink_c::draw() {
         // NOTE: setting renamed/inverted from "Hide Body" (vrHideBody) to
         // "Experimental: Show Link's Body" (vrShowBody), now off by default
         // -- same underlying mechanism, just flipped sense and default.
+        // checkVrClimbState() added 2026-10-10: the forced third-person view
+        // while climbing a ladder/wall/vine (isFirstPerson(), vr_link_
+        // visibility.hpp) is pointless with an invisible body, exactly like
+        // the vrThirdPerson setting the line above already accounts for -- so
+        // show the body for the whole climb too, or the player climbs as a
+        // floating camera.
         const BOOL hideBodyForVr = dusk::vr::isRenderingToHeadset() &&
                                     !dusk::getSettings().game.vrShowBody.getValue() &&
                                     !dusk::getSettings().game.vrThirdPerson.getValue() &&
-                                    !dusk::vr::isRealCutsceneRunning();
+                                    !dusk::vr::isRealCutsceneRunning() &&
+                                    !checkVrClimbState();
         modelDraw(mpLinkModel, isPlayerNoDraw || hideBodyForVr);
 
         if (dComIfGp_checkCameraAttentionStatus(field_0x317c, 0x20)) {

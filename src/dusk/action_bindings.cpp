@@ -24,6 +24,7 @@ ActionBindsMap& getActionBinds() {
         {ActionBinds::TOGGLE_MINIMAP,      {&getSettings().actionBindings.toggleMinimap,     "Toggle Minimap"}},
         {ActionBinds::OPEN_DUSKLIGHT_MENU, {&getSettings().actionBindings.openDusklightMenu, "Open Dusklight Menu"}},
         {ActionBinds::TURBO_SPEED_BUTTON,  {&getSettings().actionBindings.turboSpeedButton,  "Turbo Speed Button"}},
+        {ActionBinds::TOGGLE_VR_THIRD_PERSON, {&getSettings().actionBindings.toggleVrThirdPerson, "Toggle VR Third Person"}},
     };
     return actionBinds;
 }
@@ -97,6 +98,18 @@ void updateActionBindings() {
             if (virtualAction.available && virtualAction.pressed && !ui::any_document_visible()) {
                 actionPressData[port][static_cast<int>(action)].pressedCurFrame = true;
             }
+        }
+    }
+
+    // Toggle the "Third Person" VR setting from a bound controller button /
+    // combo (ActionBinds::TOGGLE_VR_THIRD_PERSON). The same setting also lives
+    // in the Dusklight menu under VR -> Appearance -> Third Person; this just
+    // gives it an in-game hotkey. Fires on the press edge, once per frame.
+    for (u32 port = 0; port < PAD_CHANMAX; ++port) {
+        if (getActionBindTrig(ActionBinds::TOGGLE_VR_THIRD_PERSON, port)) {
+            auto& thirdPerson = getSettings().game.vrThirdPerson;
+            thirdPerson.setValue(!thirdPerson.getValue());
+            break;
         }
     }
 }

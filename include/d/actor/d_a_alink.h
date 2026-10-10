@@ -3330,6 +3330,22 @@ public:
         return mProcID == PROC_CLIMB_MOVE_UPDOWN || mProcID == PROC_LADDER_MOVE ||
                mProcID == PROC_CLIMB_MOVE_SIDE;
     }
+    // VR: true for the WHOLE ladder/wall/vine climb sequence -- the moving
+    // procs checkClimbMove() already covers, plus the climb-up/down start/end/
+    // wait transitions, the hang->climb transition, and vine-climb mode -- so
+    // the VR view can fall back to third person for the whole climb instead of
+    // flickering between procs. In first person the camera is anchored to
+    // Link's body and bobs with each hand-over-hand step up the ladder/wall;
+    // third person anchors to the game camera instead. Used by
+    // dusk::vr::isFirstPerson() (vr_link_visibility.hpp).
+    bool checkVrClimbState() const {
+        return checkClimbMove() || mProcID == PROC_CLIMB_WAIT ||
+               mProcID == PROC_CLIMB_UP_START || mProcID == PROC_CLIMB_DOWN_START ||
+               mProcID == PROC_CLIMB_TO_ROOF || mProcID == PROC_LADDER_UP_START ||
+               mProcID == PROC_LADDER_UP_END || mProcID == PROC_LADDER_DOWN_START ||
+               mProcID == PROC_LADDER_DOWN_END || mProcID == PROC_HANG_CLIMB ||
+               checkModeFlg(MODE_VINE_CLIMB);
+    }
     virtual BOOL checkGrassWhistle() const { return mProcID == PROC_GRASS_WHISTLE_WAIT; }
     virtual BOOL checkBoarRun() const { return mProcID == PROC_BOAR_RUN; }
     virtual BOOL checkHorseRideNotReady() const {

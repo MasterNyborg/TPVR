@@ -1822,6 +1822,31 @@ void tick(const dusk::game_clock::FrameTiming& pacing) {
     const bool rightStickClickHeld = getBoolAction(g_stickClickAction, g_rightHandPath);
     const bool leftStickClickHeld = getBoolAction(g_stickClickAction, g_leftHandPath);
 
+    // Hold the LEFT thumbstick click for 2 seconds to toggle first/third-person
+    // VR (the same setting as VR -> Appearance -> Third Person, and the
+    // "Toggle VR Third Person" action bind). The left stick click is otherwise
+    // mapped to the game's Z button just below; this is an extra long-press
+    // gesture layered on top of that, not a replacement. Fires once per press:
+    // the latch clears on release, so you must let go before it can re-arm.
+    {
+        constexpr float kViewToggleHoldSec = 2.0f;
+        static float s_leftStickClickHoldSec = 0.f;
+        static bool s_leftStickClickToggleFired = false;
+        if (leftStickClickHeld) {
+            if (!s_leftStickClickToggleFired) {
+                s_leftStickClickHoldSec += pacing.dt;
+                if (s_leftStickClickHoldSec >= kViewToggleHoldSec) {
+                    auto& thirdPerson = dusk::getSettings().game.vrThirdPerson;
+                    thirdPerson.setValue(!thirdPerson.getValue());
+                    s_leftStickClickToggleFired = true;
+                }
+            }
+        } else {
+            s_leftStickClickHoldSec = 0.f;
+            s_leftStickClickToggleFired = false;
+        }
+    }
+
     // VR-menu-gamepad, plan step 3 (see vr_menu_gamepad.hpp) -- now wires
     // navigation too, on top of step 2's menu-open chord: left thumbstick
     // moves the selection (up/down/left/right), right A confirms, right B
@@ -2895,7 +2920,18 @@ void tick(const dusk::game_clock::FrameTiming& pacing) {
     // (not per eye) -- see vr_stereo_render.hpp's updateHudSmoothing()/
     // computeHudPose() comments. Added per user feedback that the
     // head-locked panel felt "really shaky" with raw per-frame tracking.
-    vr_render::updateHudSmoothing(hmdPose, dusk::vr::getSmoothTurnYawRad());
+    //
+    // The damping factor is picked per first/third-person here: first person
+    // uses the snappier kHudDampingAlphaFirstPerson (a lagging panel is much
+    // more obvious when the camera IS your head), third person keeps the
+    // original kHudDampingAlpha. Defaults to third-person damping if there's
+    // no Link (menus/loading) so nothing depends on the free function below.
+    {
+        auto* hudLink = static_cast<daAlink_c*>(dComIfGp_getLinkPlayer());
+        const bool hudFirstPerson = hudLink != nullptr && dusk::vr::isVrFirstPerson(hudLink);
+        vr_render::updateHudSmoothing(hmdPose, dusk::vr::getSmoothTurnYawRad(),
+            hudFirstPerson ? vr_render::kHudDampingAlphaFirstPerson : vr_render::kHudDampingAlpha);
+    }
 
     // CONFIRMED this session (first HUD-billboard in-headset test came back
     // solid black): mDoGph_drawHud2D() draws nothing until fpcM_DrawIterater()

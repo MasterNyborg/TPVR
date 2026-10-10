@@ -896,6 +896,14 @@ inline bool g_hudSmoothingInitialized = false;
 // retune empirically in-headset like the other constants in this section.
 inline constexpr float kHudDampingAlpha = 0.08f;
 
+// First-person override for the damping above: when the camera IS your head
+// (first person), a lagging panel is far more obvious than in third person
+// (where the view is anchored to the game camera), so the panel tracks the
+// real head direction much faster. Still a low-pass filter -- just snappier.
+// Passed to updateHudSmoothing() by the caller (vr_main.cpp), which knows the
+// current first/third-person state; third person keeps kHudDampingAlpha.
+inline constexpr float kHudDampingAlphaFirstPerson = 0.4f;
+
 inline void normalizeInPlace(cXyz& v) {
     const float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
     if (len > 0.0001f) {
@@ -944,8 +952,23 @@ inline cXyz computeHeadWorldForward(const XrPosef& headPose, float yawRad) {
 // instead of staying pinned to the un-rotated raw head direction, which
 // would otherwise make the HUD appear to drift out of sync with the
 // smooth-turned view.
-inline void updateHudSmoothing(const XrPosef& headPose, float yawRad) {
+inline void updateHudSmoothing(const XrPosef& headPose, float yawRad, float dampingAlpha) {
     const cXyz rawForward = computeHeadWorldForward(headPose, yawRad);
+
+    // Snap straight to the new direction on any INSTANT yaw discontinuity
+    // (a snap turn, or a scripted-camera jump cut -- both set
+    // g_instantYawJumpThisFrame in vr_smooth_turn.hpp). The 3D scene rotated
+    // by the whole jump in one frame, so the panel must too; damping across it
+    // would visibly swing the panel behind the world. Manual head turns never
+    // set this flag, so the normal damping below still applies to them (the
+    // requested behavior: interpolate when looking around by hand, snap on a
+    // snap turn). Cleared here so it only affects the one frame it fired on.
+    if (dusk::vr::g_instantYawJumpThisFrame) {
+        dusk::vr::g_instantYawJumpThisFrame = false;
+        g_hudSmoothedWorldForward = rawForward;
+        g_hudSmoothingInitialized = true;
+        return;
+    }
 
     if (!g_hudSmoothingInitialized) {
         // Snap on the very first frame -- avoids a pop-in lerp from the
@@ -956,9 +979,9 @@ inline void updateHudSmoothing(const XrPosef& headPose, float yawRad) {
         return;
     }
 
-    g_hudSmoothedWorldForward.x += (rawForward.x - g_hudSmoothedWorldForward.x) * kHudDampingAlpha;
-    g_hudSmoothedWorldForward.y += (rawForward.y - g_hudSmoothedWorldForward.y) * kHudDampingAlpha;
-    g_hudSmoothedWorldForward.z += (rawForward.z - g_hudSmoothedWorldForward.z) * kHudDampingAlpha;
+    g_hudSmoothedWorldForward.x += (rawForward.x - g_hudSmoothedWorldForward.x) * dampingAlpha;
+    g_hudSmoothedWorldForward.y += (rawForward.y - g_hudSmoothedWorldForward.y) * dampingAlpha;
+    g_hudSmoothedWorldForward.z += (rawForward.z - g_hudSmoothedWorldForward.z) * dampingAlpha;
     // Lerping two unit vectors shrinks the result -- renormalize.
     normalizeInPlace(g_hudSmoothedWorldForward);
 }

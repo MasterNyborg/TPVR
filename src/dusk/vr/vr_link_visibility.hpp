@@ -960,6 +960,19 @@ inline bool isFirstPerson(daAlink_c* link) {
     if (dusk::getSettings().game.vrThirdPerson.getValue() &&
         !isHookshotAirborneOrHanging(link) && !isHookshotAiming(link)) return false;
 
+    // Ladder/wall/vine climbing: forced third-person for the whole climb
+    // (explicit request -- in first person the camera is anchored to Link's
+    // body and bobs with every hand-over-hand step). "Third person" here
+    // reuses the exact same proven fallback as Wolf form/cutscenes: the VR
+    // camera anchors to the flatscreen game camera (getVrCameraEyeAnchor()'s
+    // fallbackEye = view->lookat.eye), which follows behind and faces Link,
+    // while the headset still looks around freely on top. On a ladder the
+    // flatscreen camera is ordinary third-person gameplay, not one of the
+    // states (hookshot flight, mounted cutscenes) this fallback is known to
+    // misbehave in. Automatically returns to first person the moment the
+    // climb procs end. See checkVrClimbState() (d_a_alink.h).
+    if (link->checkVrClimbState()) return false;
+
     if (!link->checkEventRun()) return true;  // no event at all -- ordinary gameplay
 
     dEvt_control_c* event = dComIfGp_getEvent();

@@ -1,0 +1,62 @@
+{
+  "version": 2,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "win-local-rwdi",
+      "displayName": "Windows MSVC RelWithDebInfo (local, build tree on C:)",
+      "inherits": "relwithdebinfo",
+      "generator": "Ninja",
+      "binaryDir": "C:/Dev/TPVR-build/windows-msvc-rwdi",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_INSTALL_PREFIX": "C:/Dev/TPVR-build/install",
+        "CMAKE_DISABLE_FIND_PACKAGE_PkgConfig": {
+          "type": "BOOL",
+          "value": true
+        },
+        "OpenXR_DIR": "C:/Dev/TPVR-deps/openxr-sdk"
+      }
+    },
+    {
+      "name": "win-local-debug",
+      "displayName": "Windows MSVC Debug (local, build tree on C:)",
+      "inherits": "debug",
+      "generator": "Ninja",
+      "binaryDir": "C:/Dev/TPVR-build/windows-msvc-debug",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_INSTALL_PREFIX": "C:/Dev/TPVR-build/install",
+        "CMAKE_DISABLE_FIND_PACKAGE_PkgConfig": {
+          "type": "BOOL",
+          "value": true
+        },
+        "OpenXR_DIR": "C:/Dev/TPVR-deps/openxr-sdk"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "win-local-rwdi",
+      "configurePreset": "win-local-rwdi"
+    },
+    {
+      "name": "win-local-debug",
+      "configurePreset": "win-local-debug"
+    }
+  ]
+}

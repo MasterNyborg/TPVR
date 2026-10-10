@@ -307,6 +307,12 @@ UserSettings g_userSettings = {
             ActionBindConfigVar{"actionBindings.turboButton_port2", PAD_NATIVE_BUTTON_INVALID},
             ActionBindConfigVar{"actionBindings.turboButton_port3", PAD_NATIVE_BUTTON_INVALID},
         },
+        .toggleVrThirdPerson {
+            ActionBindConfigVar{"actionBindings.toggleVrThirdPerson_port0", PAD_NATIVE_BUTTON_INVALID},
+            ActionBindConfigVar{"actionBindings.toggleVrThirdPerson_port1", PAD_NATIVE_BUTTON_INVALID},
+            ActionBindConfigVar{"actionBindings.toggleVrThirdPerson_port2", PAD_NATIVE_BUTTON_INVALID},
+            ActionBindConfigVar{"actionBindings.toggleVrThirdPerson_port3", PAD_NATIVE_BUTTON_INVALID},
+        },
     }
 };
 
@@ -553,6 +559,10 @@ void registerSettings() {
     Register(g_userSettings.actionBindings.turboSpeedButton[1]);
     Register(g_userSettings.actionBindings.turboSpeedButton[2]);
     Register(g_userSettings.actionBindings.turboSpeedButton[3]);
+    Register(g_userSettings.actionBindings.toggleVrThirdPerson[0]);
+    Register(g_userSettings.actionBindings.toggleVrThirdPerson[1]);
+    Register(g_userSettings.actionBindings.toggleVrThirdPerson[2]);
+    Register(g_userSettings.actionBindings.toggleVrThirdPerson[3]);
 }
 
 // Transient settings

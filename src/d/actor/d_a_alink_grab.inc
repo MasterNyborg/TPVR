@@ -378,6 +378,41 @@ void daAlink_c::setGrabItemPos() {
                 grabActor->current.pos = sp134;
             }
         }
+
+#if TARGET_PC
+        // VR: a carried/grabbed item is authored to sit right in front of Link
+        // -- fine for the flatscreen chase camera, but in VR that lands the
+        // item on the player's face (first person: the camera IS Link's head;
+        // third person: the camera sits just behind him). Push it away from
+        // Link's eye on the ground plane and a little downward so it clears
+        // the view instead of filling it. Applied AFTER the per-tick position
+        // above, so it is a constant nudge each tick, not an accumulator.
+        // Tune kGrabVrAwayUnits / kGrabVrDownUnits (TP is ~35 units/metre, so
+        // 25/10 are roughly 0.7 m further away and 0.3 m lower). First person
+        // only -- third person keeps the item in Link's actual arms (see the
+        // matching first-person gate on the hand override in setBodyPartPos(),
+        // d_a_alink.cpp), so it must NOT be pushed out of them.
+        if (dusk::vr::isRenderingToHeadset() && dusk::vr::isVrFirstPerson(this)) {
+            constexpr f32 kGrabVrAwayUnits = 25.0f;
+            constexpr f32 kGrabVrDownUnits = 10.0f;
+
+            cXyz awayVec(grabActor->current.pos.x - field_0x3768.x, 0.0f,
+                         grabActor->current.pos.z - field_0x3768.z);
+            const f32 len = awayVec.abs();
+            if (len > 1.0f) {
+                awayVec *= (1.0f / len);
+            } else {
+                // Already effectively at the eye horizontally -- an unstable
+                // direction, so push along Link's facing instead.
+                awayVec.x = cM_ssin(shape_angle.y);
+                awayVec.y = 0.0f;
+                awayVec.z = cM_scos(shape_angle.y);
+            }
+            grabActor->current.pos.x += awayVec.x * kGrabVrAwayUnits;
+            grabActor->current.pos.z += awayVec.z * kGrabVrAwayUnits;
+            grabActor->current.pos.y -= kGrabVrDownUnits;
+        }
+#endif
         return;
     }
 
