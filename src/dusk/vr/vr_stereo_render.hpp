@@ -1583,6 +1583,135 @@ inline void drawAimCrosshair(const cXyz& worldPos) {
     GXEnd();
 }
 
+// ===========================================================================
+// Teleport locomotion drawing (see vr_main.cpp's teleport block):
+// a world-space ground marker + a full-screen black fade for the blink.
+// ===========================================================================
+
+// Full-screen black, alpha 0..1 -- hides the teleport jump. Call once per eye
+// AFTER everything else (a screen-space overlay covering the eye FOV).
+inline void drawVrFade(float alpha) {
+    if (alpha <= 0.002f) return;
+    view_class* view = dComIfGd_getView();
+    if (view == nullptr) return;
+    if (alpha > 1.0f) alpha = 1.0f;
+
+    float fovyDeg = 0.0f, aspect = 1.0f;
+    getEyeSymmetricFov(&fovyDeg, &aspect);
+    if (fovyDeg <= 1.0f || aspect <= 0.0f) return;
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float dist = kHudDistanceMeters * kHudUnitsPerMetre;
+    const float halfH = dist * std::tan(fovyDeg * 0.5f * (kPi / 180.0f)) * 1.2f;
+    const float halfW = halfH * aspect * 1.2f;
+    const u8 a = static_cast<u8>(alpha * 255.0f);
+
+    GXSetProjection(view->projMtx, GX_PERSPECTIVE);
+    GXLoadPosMtxImm(cMtx_getIdentity(), GX_PNMTX0);
+    GXSetCurrentMtx(0);
+    GXClearVtxDesc();
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXSetNumChans(1);
+    GXSetChanCtrl(GX_COLOR0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_CLAMP, GX_AF_NONE);
+    GXSetNumTexGens(0);
+    GXSetNumTevStages(1);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_SET);
+    GXSetZMode(GX_DISABLE, GX_ALWAYS, GX_DISABLE);
+    GXSetCullMode(GX_CULL_NONE);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_OR, GX_ALWAYS, 0);
+    GXBegin(GX_QUADS, GX_VTXFMT0, 4);
+    GXPosition3f32(-halfW, halfH, -dist); GXColor4u8(0, 0, 0, a);
+    GXPosition3f32(halfW, halfH, -dist);  GXColor4u8(0, 0, 0, a);
+    GXPosition3f32(halfW, -halfH, -dist); GXColor4u8(0, 0, 0, a);
+    GXPosition3f32(-halfW, -halfH, -dist); GXColor4u8(0, 0, 0, a);
+    GXEnd();
+}
+
+// World-space triforce ground marker (+ facing arrow) at `worldPos`. `valid`
+// turns it green (landable) or red (not). `facingYawS` (s16 BAMS) orients the
+// triforce and the arrow. Call once per eye after the scene draw, like
+// drawAimCrosshair() -- each vertex is transformed world->eye individually,
+// so real per-eye stereo parallax is preserved.
+inline void drawTeleportMarker(const cXyz& worldPos, bool valid, s16 facingYawS) {
+    view_class* view = dComIfGd_getView();
+    if (view == nullptr) return;
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float yawRad = static_cast<float>(facingYawS) * (kPi / 32768.0f);
+    const float s = std::sin(yawRad), c = std::cos(yawRad);
+    // Ground-plane basis: forward = (sin, 0, cos), right = (cos, 0, -sin).
+    const float fwdX = s, fwdZ = c;
+    const float rgtX = c, rgtZ = -s;
+
+    const cXyz center(worldPos.x, worldPos.y + 1.5f, worldPos.z);  // lift to avoid z-fight
+    const float S = 16.0f;                 // marker scale (units)
+    const float H = S * 0.8660254f;        // sqrt(3)/2
+
+    const GXColor col = valid ? GXColor{45, 225, 70, 215} : GXColor{235, 45, 45, 215};
+    const GXColor arrowCol = {245, 245, 245, 215};
+
+    auto localToEye = [&](float u, float v, cXyz& e) {
+        const cXyz w(center.x + rgtX * u + fwdX * v, center.y, center.z + rgtZ * u + fwdZ * v);
+        mDoMtx_multVec(view->viewMtx, &w, &e);
+    };
+
+    GXSetProjection(view->projMtx, GX_PERSPECTIVE);
+    GXLoadPosMtxImm(cMtx_getIdentity(), GX_PNMTX0);
+    GXSetCurrentMtx(0);
+    GXClearVtxDesc();
+    GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+    GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GXSetNumChans(1);
+    GXSetChanCtrl(GX_COLOR0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_CLAMP, GX_AF_NONE);
+    GXSetNumTexGens(0);
+    GXSetNumTevStages(1);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_SET);
+    GXSetZMode(GX_ENABLE, GX_LEQUAL, GX_FALSE);
+    GXSetCullMode(GX_CULL_NONE);
+    GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_OR, GX_ALWAYS, 0);
+
+    // Triforce: three upward triangles (local u=right, v=forward), arranged as
+    // the classic big triangle minus its centre. Shifted to sit on the marker.
+    struct P2 { float u, v; };
+    const float offU = -S;
+    const float offV = -H * 0.666f;
+    const P2 tri[3][3] = {
+        {{0.0f, 0.0f}, {S, 0.0f}, {S * 0.5f, H}},
+        {{S, 0.0f}, {S * 2.0f, 0.0f}, {S * 1.5f, H}},
+        {{S * 0.5f, H}, {S * 1.5f, H}, {S, 2.0f * H}},
+    };
+    GXBegin(GX_TRIANGLES, GX_VTXFMT0, 9);
+    for (int t = 0; t < 3; ++t) {
+        for (int k = 0; k < 3; ++k) {
+            cXyz e;
+            localToEye(tri[t][k].u + offU, tri[t][k].v + offV, e);
+            GXPosition3f32(e.x, e.y, e.z);
+            GXColor4u8(col.r, col.g, col.b, col.a);
+        }
+    }
+    GXEnd();
+
+    // Facing arrow: a triangle from the marker pointing along the facing.
+    cXyz tipE, blE, brE;
+    localToEye(0.0f, S * 2.0f, tipE);
+    localToEye(-S * 0.7f, S * 0.8f, blE);
+    localToEye(S * 0.7f, S * 0.8f, brE);
+    GXBegin(GX_TRIANGLES, GX_VTXFMT0, 3);
+    GXPosition3f32(tipE.x, tipE.y, tipE.z); GXColor4u8(arrowCol.r, arrowCol.g, arrowCol.b, arrowCol.a);
+    GXPosition3f32(blE.x, blE.y, blE.z);    GXColor4u8(arrowCol.r, arrowCol.g, arrowCol.b, arrowCol.a);
+    GXPosition3f32(brE.x, brE.y, brE.z);    GXColor4u8(arrowCol.r, arrowCol.g, arrowCol.b, arrowCol.a);
+    GXEnd();
+}
+
 // ---------------------------------------------------------------------------
 // Hand mesh injection
 //

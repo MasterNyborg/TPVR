@@ -556,6 +556,12 @@ struct UserSettings {
         ConfigVar<int> vrSmoothTurnSpeed;
         ConfigVar<bool> vrSnapTurn;
         ConfigVar<int> vrSnapTurnAngle;
+        // Teleport locomotion (first person): while walking, pull the right
+        // thumbstick back to aim a ground marker (where the right controller
+        // points, found via real collision); spin the stick to rotate the
+        // facing arrow; release to blink the view black, move Link there, and
+        // blink back. See vr_main.cpp's teleport block. Default on.
+        ConfigVar<bool> vrTeleportLocomotion;
         // First-person comfort tweaks (2026-09-28), all default ON; off
         // restores the original TPVR behaviour for comparison.
         //  vrSmoothStartStop: move at the plain speed ramp instead of the

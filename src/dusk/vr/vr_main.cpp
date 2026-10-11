@@ -26,6 +26,9 @@
 
 #include "SSystem/SComponent/c_API_graphic.h"  // cAPIGph_Painter
 #include "SSystem/SComponent/c_math.h"          // cM_atan2s -- getHeadMoveAngleS()
+#include "SSystem/SComponent/c_m3d_g_pla.h"      // cM3dGPla -- teleport ground normal
+#include "d/d_bg_s.h"                            // dBgS (dComIfG_Bgsp) -- teleport ground check
+#include "d/d_bg_s_gnd_chk.h"                    // dBgS_GndChk -- teleport ground raycast
 #include "m_Do/m_Do_controller_pad.h"            // mDoCPd_c::getSubStickX -- real physical gamepad C-stick
 #include "m_Do/m_Do_graphic.h"                  // mDoGph_gInf_c::captureHudBillboard
 #include "f_pc/f_pc_manager.h"                  // fpcM_DrawIterater, fpcM_Draw
@@ -2183,12 +2186,140 @@ void tick(const dusk::game_clock::FrameTiming& pacing) {
     // C-stick for camera turn while fishing either. The yank-gesture fix
     // from earlier this session is left in place, not reverted -- this is
     // an additional/alternative control, not a replacement.
+    // ===== Teleport locomotion (first person only) =====
+    // While walking, pull the right thumbstick back to aim a ground marker
+    // where the right controller points (found with real collision); spin the
+    // stick left/right to rotate the facing arrow; release to blink the view
+    // black, move Link there, and blink back. See game.vrTeleportLocomotion.
+    // While aiming, the right stick is repurposed (facing) -- the smooth/snap
+    // turn below is skipped for those frames.
+    static bool s_tpAiming = false;
+    static s16  s_tpFacingYawS = 0;
+    static bool s_tpValid = false;
+    static cXyz s_tpTarget;
+    static float s_tpFade = 0.f;       // 0..1 screen black
+    static float s_tpFadeDir = 0.f;    // >0 to black, <0 to clear
+    static bool  s_tpMovePending = false;
+    static cXyz  s_tpPendingPos;
+    static s16   s_tpPendingYawS = 0;
+    static bool  s_tpMarkerVisible = false;
+
+    constexpr float kTpEngageY = 0.6f;         // pull back this far to aim
+    constexpr float kTpReleaseY = 0.3f;        // release past this to fire
+    constexpr float kTpMaxRangeUnits = 400.0f; // max teleport distance
+    constexpr float kTpStepUnits = 6.0f;       // aim-ray march step
+    constexpr float kTpMaxSlopeCos = 0.64f;    // ~50 deg: steeper is invalid
+    constexpr float kTpTurnDegPerSec = 120.0f; // stick spin -> facing
+    constexpr float kTpFadeOutSec = 0.12f;
+    constexpr float kTpFadeInSec = 0.25f;
+
+    auto* tpLink = static_cast<daAlink_c*>(dComIfGp_getLinkPlayer());
+    const bool tpFirstPerson = tpLink != nullptr && dusk::vr::isVrFirstPerson(tpLink);
+    const bool tpEligible = dusk::getSettings().game.vrTeleportLocomotion.getValue() &&
+                            tpFirstPerson &&
+                            !isFishingRodActive() && !dusk::ui::any_document_visible() &&
+                            !dComIfGp_event_runCheck();
+
+    if (!s_tpAiming) {
+        if (tpEligible && rightStick.y <= -kTpEngageY) {
+            s_tpAiming = true;
+            s_tpFacingYawS = tpLink->shape_angle.y;
+        }
+    } else if (!tpEligible) {
+        s_tpAiming = false;  // lost eligibility (stopped etc.) -- cancel
+    } else if (rightStick.y > -kTpReleaseY) {
+        // Released: fire if we have a valid landing spot.
+        s_tpAiming = false;
+        if (s_tpValid) {
+            s_tpMovePending = true;
+            s_tpFadeDir = 1.0f;
+            s_tpPendingPos = s_tpTarget;
+            s_tpPendingYawS = s_tpFacingYawS;
+        }
+    }
+
+    s_tpMarkerVisible = false;
+    if (s_tpAiming) {
+        // Spin facing with the stick's horizontal axis.
+        s_tpFacingYawS = static_cast<s16>(s_tpFacingYawS +
+            static_cast<s16>(rightStick.x * kTpTurnDegPerSec * (32768.0f / 360.0f) *
+                             static_cast<float>(pacing.dt)));
+
+        float hx, hy, hz;
+        if (dusk::vr::getTrackedHandWorldPos(false, hx, hy, hz)) {
+            const auto aimFwd =
+                vr_link::computeControllerAimForward(rightAimPose, dusk::vr::getSmoothTurnYawRad());
+            static dBgS_GndChk s_tpGndChk;
+            cM3dGPla pla;
+            const cXyz origin(hx, hy, hz);
+            bool found = false;
+            cXyz hit;
+
+            // 1) March the raw aim ray until it dips to/below the ground (this
+            //    is what "points at the ground" -- aim down and it lands there).
+            for (float t = kTpStepUnits; t <= kTpMaxRangeUnits; t += kTpStepUnits) {
+                cXyz p(origin.x + aimFwd.x * t, origin.y + aimFwd.y * t, origin.z + aimFwd.z * t);
+                s_tpGndChk.SetPos(&p);
+                const f32 gy = dComIfG_Bgsp().GroundCross(&s_tpGndChk);
+                if (gy > -1.0e8f && p.y <= gy) {
+                    hit.set(p.x, gy, p.z);
+                    found = true;
+                    break;
+                }
+            }
+            // 2) If the ray was level/upward and never reached the ground,
+            //    fall back to the ground directly below where the ray's
+            //    horizontal direction ends, so a level point still lands in
+            //    front of you instead of doing nothing.
+            if (!found) {
+                cXyz end(origin.x + aimFwd.x * kTpMaxRangeUnits, origin.y,
+                         origin.z + aimFwd.z * kTpMaxRangeUnits);
+                s_tpGndChk.SetPos(&end);
+                const f32 gy = dComIfG_Bgsp().GroundCross(&s_tpGndChk);
+                if (gy > -1.0e8f) {
+                    hit.set(end.x, gy, end.z);
+                    found = true;
+                }
+            }
+
+            if (found) {
+                s_tpValid = dComIfG_Bgsp().GetTriPla(s_tpGndChk, &pla) &&
+                            pla.mNormal.y >= kTpMaxSlopeCos;
+                s_tpTarget = hit;
+                s_tpMarkerVisible = true;
+            } else {
+                s_tpValid = false;
+            }
+        } else {
+            s_tpValid = false;
+        }
+    }
+
+    // Fade / teleport sequence -- runs independently of the aiming state.
+    if (s_tpMovePending) {
+        s_tpFade += s_tpFadeDir * static_cast<float>(pacing.dt) / kTpFadeOutSec;
+        if (s_tpFade >= 1.0f) {
+            s_tpFade = 1.0f;
+            if (tpLink != nullptr) {
+                tpLink->setPlayerPosAndAngle(&s_tpPendingPos, s_tpPendingYawS, FALSE);
+            }
+            s_tpMovePending = false;
+            s_tpFadeDir = -1.0f;
+        }
+    } else if (s_tpFade > 0.0f) {
+        s_tpFade += s_tpFadeDir * static_cast<float>(pacing.dt) / kTpFadeInSec;
+        if (s_tpFade <= 0.0f) {
+            s_tpFade = 0.0f;
+            s_tpFadeDir = 0.0f;
+        }
+    }
+
     if (dusk::vr::isFishingRodActive()) {
         if (std::abs(rightStick.x) > kStickDeadzone || std::abs(rightStick.y) > kStickDeadzone) {
             padStatus.substickX = static_cast<s8>(std::clamp(rightStick.x, -1.f, 1.f) * 127.f);
             padStatus.substickY = static_cast<s8>(std::clamp(rightStick.y, -1.f, 1.f) * 127.f);
         }
-    } else {
+    } else if (!s_tpAiming) {
         // Real physical gamepad's C-stick (2026-08-19, explicit user
         // request: "make the c stick function, c left and c right, rotate
         // the camera left and right in the same way that moving the right
@@ -3084,6 +3215,11 @@ void tick(const dusk::game_clock::FrameTiming& pacing) {
                                           vr_render::g_menuBillboardAspectHeightOverWidth);
         }
 
+        if (s_tpMarkerVisible) {
+            vr_render::drawTeleportMarker(s_tpTarget, s_tpValid, s_tpFacingYawS);
+        }
+        vr_render::drawVrFade(s_tpFade);
+
         PerfClock::time_point perfT4 = PerfClock::now();
         aurora::gfx::ResolvedTargets targets =
             vr_render::endStereoPass(directRender ? &directTarget : nullptr, spaceWarpFrame);
@@ -3231,6 +3367,11 @@ void tick(const dusk::game_clock::FrameTiming& pacing) {
             vr_render::drawMenuBillboard(&vr_render::g_menuBillboardTexObj,
                                           vr_render::g_menuBillboardAspectHeightOverWidth);
         }
+
+        if (s_tpMarkerVisible) {
+            vr_render::drawTeleportMarker(s_tpTarget, s_tpValid, s_tpFacingYawS);
+        }
+        vr_render::drawVrFade(s_tpFade);
 
         // TODO: inject hand mesh before resolving the pass:
         // vr_render::HandPayload payload{ eye == 0 ? leftPose : rightPose };

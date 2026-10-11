@@ -1074,6 +1074,17 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
             15, 90, 15,
             [] { return !getSettings().game.vrSnapTurn.getValue(); }, {}, " deg");
 
+        config_bool_select(leftPane, rightPane, getSettings().game.vrTeleportLocomotion,
+            {
+                .key = "Teleport Locomotion",
+                .helpText = "First person only. While you are walking, pull the right thumbstick "
+                            "back (toward you) to aim a ground marker where your right controller "
+                            "points; the marker is green where you can safely land and red where "
+                            "you can't. Spin the right stick left/right to turn the facing arrow, "
+                            "then release the stick to blink the view black and teleport Link "
+                            "there. On by default."
+            });
+
         leftPane.add_section("Appearance");
         config_bool_select(leftPane, rightPane, getSettings().game.vrThirdPerson,
             {

@@ -158,6 +158,36 @@ the world.
 Raise `kHudDampingAlphaFirstPerson` toward 1.0 for even snappier first-person
 tracking; lower it for steadier.
 
+## Teleport locomotion (first person)
+
+Setting `game.vrTeleportLocomotion` (default on), toggle **VR → Turning →
+"Teleport Locomotion"**. First person only, while walking (left stick engaged).
+
+- Pull the right thumbstick **back** (toward you) to aim a ground marker where
+  the **right controller points**; the marker is a **triforce**, green where the
+  landing is valid, red where it isn't.
+- The target is found with real collision: an aim-ray from the tracked right
+  hand is marched against the world's ground (`dComIfG_Bgsp().GroundCross`),
+  rejecting no-ground and ground steeper than ~50°.
+- Spin the right stick left/right to rotate the **facing arrow**; release the
+  stick to **blink the view black, teleport Link, and blink back** (Link ends
+  facing the arrow).
+- While aiming, the right stick is repurposed (facing), so smooth/snap turn is
+  skipped for those frames.
+
+Implementation:
+- `src/dusk/vr/vr_stereo_render.hpp` — `drawTeleportMarker(worldPos, valid,
+  facingYawS)` (world-space triforce + arrow) and `drawVrFade(alpha)`
+  (full-screen black). Both per eye.
+- `src/dusk/vr/vr_main.cpp` — the "Teleport locomotion" block (state machine,
+  aim raycast, fade/teleport) + draw calls in both render paths.
+
+Tunables (in the `vr_main.cpp` block): `kTpEngageY`/`kTpReleaseY` (stick-back
+thresholds), `kTpMaxRangeUnits`, `kTpStepUnits`, `kTpMaxSlopeCos`,
+`kTpTurnDegPerSec`, `kTpFadeOutSec`/`kTpFadeInSec`. Marker size is `S` in
+`drawTeleportMarker`. If pull-back direction or the arrow rotation come out
+inverted, flip the sign of `kTpEngageY`/`kTpReleaseY` or the stick-X term.
+
 ## Third person while climbing ladders/walls/vines
 
 In first person, the camera is anchored to Link's body, so it bobbed with every
